@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -101,6 +101,71 @@ async function extractZip(zipPath, destDir) {
   );
 }
 
+const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
+const instancesRoot = () => path.join(app.getPath("userData"), "instances");
+const localBuildsPath = () => path.join(app.getPath("userData"), "local-builds.json");
+function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; } }
+function loadSettings() { return { username: "Player", ram: 2048, ...readJson(settingsPath(), {}) }; }
+function saveJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8"); }
+function readLocalBuilds() { const builds = readJson(localBuildsPath(), []); return Array.isArray(builds) ? builds : []; }
+function validBuildId(id) { if (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) throw new Error("Некорректный идентификатор сборки"); const build = readLocalBuilds().find(item => item.id === id); if (!build) throw new Error("Сборка не найдена"); return build; }
+
+ipcMain.handle("settings:get", () => loadSettings());
+ipcMain.handle("settings:set-username", (_event, rawName) => {
+  const username = String(rawName ?? "").trim();
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) throw new Error("Ник должен содержать 3–16 символов: латинские буквы, цифры или _");
+  const settings = { ...loadSettings(), username }; saveJson(settingsPath(), settings); return settings;
+});
+
+ipcMain.handle("builds:list-local", () => readLocalBuilds());
+ipcMain.handle("builds:create-local", async (_event, input) => {
+  const name = String(input?.name ?? "").trim(); const mcVersion = String(input?.mcVersion ?? "").trim();
+  if (name.length < 2 || name.length > 40) throw new Error("Название сборки: от 2 до 40 символов");
+  if (!/^\d+\.\d+(?:\.\d+)?$/.test(mcVersion)) throw new Error("Укажи версию Minecraft, например 1.20.1");
+  const build = { id: crypto.randomUUID(), name, mcVersion, modLoader: "Vanilla", createdAt: new Date().toISOString() };
+  const builds = readLocalBuilds(); builds.push(build); saveJson(localBuildsPath(), builds);
+  await fsp.mkdir(path.join(instancesRoot(), build.id), { recursive: true }); return build;
+});
+
+ipcMain.handle("modrinth:search", async (_event, input = {}) => {
+  const query = String(input.query ?? "").trim(); const mcVersion = String(input.mcVersion ?? "").trim(); const loader = String(input.loader ?? "").toLowerCase();
+  const facets = []; if (mcVersion) facets.push(["versions:" + mcVersion]);
+  if (["fabric", "forge", "quilt", "neoforge"].includes(loader)) facets.push(["categories:" + loader]);
+  const params = new URLSearchParams({ limit: "20", index: "relevance" }); if (query) params.set("query", query); if (facets.length) params.set("facets", JSON.stringify(facets));
+  const response = await fetch("https://api.modrinth.com/v2/search?" + params, { headers: { "User-Agent": "NexLauncher/1.0 (https://github.com/yuripad6/NexLauncher)" } });
+  if (!response.ok) throw new Error("Modrinth API вернул HTTP " + response.status); const data = await response.json();
+  return (data.hits || []).map(hit => ({ id: hit.project_id, slug: hit.slug, title: hit.title, description: hit.description, icon: hit.icon_url, downloads: hit.downloads, projectType: hit.project_type }));
+});
+
+ipcMain.handle("modrinth:install", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? "")); const projectId = String(input.projectId ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(projectId)) throw new Error("Некорректный ID проекта Modrinth");
+  const params = new URLSearchParams({ game_versions: JSON.stringify([build.mcVersion]) });
+  const response = await fetch("https://api.modrinth.com/v2/project/" + encodeURIComponent(projectId) + "/version?" + params, { headers: { "User-Agent": "NexLauncher/1.0 (https://github.com/yuripad6/NexLauncher)" } });
+  if (!response.ok) throw new Error("Не удалось получить версии проекта Modrinth"); const versions = await response.json();
+  const compatible = versions.find(version => version.files?.length); if (!compatible) throw new Error("Для Minecraft " + build.mcVersion + " не найден подходящий файл");
+  const file = compatible.files.find(item => item.primary) || compatible.files[0];
+  if (!file?.url || !/^[^/\\]+\.(jar|zip)$/i.test(file.filename)) throw new Error("Modrinth вернул неподдерживаемое имя файла");
+  const modsDir = path.join(instancesRoot(), build.id, "mods"); await fsp.mkdir(modsDir, { recursive: true }); const dest = path.join(modsDir, file.filename);
+  const download = await fetch(file.url, { redirect: "follow" }); if (!download.ok) throw new Error("Ошибка скачивания мода: HTTP " + download.status);
+  const bytes = Buffer.from(await download.arrayBuffer()); if (bytes.length > 200 * 1024 * 1024) throw new Error("Файл слишком большой (лимит 200 МБ)");
+  await fsp.writeFile(dest, bytes, { flag: "wx" }).catch(error => { if (error.code === "EEXIST") throw new Error("Этот файл уже установлен"); throw error; });
+  return { filename: file.filename, version: compatible.name };
+});
+
+ipcMain.handle("import:from-tlauncher", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const result = await dialog.showOpenDialog(mainWindow, { title: "Выберите папку сборки TLauncher или .minecraft", properties: ["openDirectory"] });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  const sourceDir = result.filePaths[0]; const instanceDir = path.join(instancesRoot(), build.id); const copied = [];
+  for (const folder of ["mods", "config", "resourcepacks", "shaderpacks"]) {
+    const source = path.join(sourceDir, folder); if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) continue;
+    const destination = path.join(instanceDir, folder); await fsp.mkdir(destination, { recursive: true });
+    await fsp.cp(source, destination, { recursive: true, force: false, errorOnExist: false }); copied.push(folder);
+  }
+  if (!copied.length) throw new Error("Не найдены папки mods, config, resourcepacks или shaderpacks. Выбери папку профиля/сборки.");
+  return { copied, source: sourceDir };
+});
 ipcMain.handle("game:launch", async (_e, opts) => {
   try {
     const { packId, username = "Player", ram = 4096 } = opts;
