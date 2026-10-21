@@ -5,7 +5,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "launcher/**"
+      - "package.json"
+      - "src/**"
+      - "electron/**"
+      - "vite.config.js"
+      - "tailwind.config.js"
+      - "index.html"
       - ".github/workflows/build-windows.yml"
 
 permissions:
@@ -14,9 +19,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: launcher
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -24,6 +26,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - name: Install dependencies
         run: npm install
       - name: Build Windows installer
@@ -32,6 +35,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NexLauncher-Windows-Installer
-          path: launcher/release/*.exe
+          path: dist/*.exe
           if-no-files-found: error
           retention-days: 14
