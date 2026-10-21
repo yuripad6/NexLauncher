@@ -258,6 +258,7 @@ export default function App() {
                   Мои сборки
                 </SectionTitle>
                 <div className="flex flex-wrap gap-4">
+                  {packs.length === 0 && <div className="flex min-h-[180px] w-full max-w-md flex-col items-center justify-center rounded-2xl border border-dashed border-[#333] p-6 text-center"><Box size={34} className="mb-3 text-gray-600" /><p className="font-bold text-white">Пока нет сборок</p><p className="mt-2 text-sm text-gray-500">Добавь сборку через API, чтобы запустить Minecraft.</p></div>}
                   {packs.map(pack => (
                     <button key={pack.id} onClick={() => setSelected(pack)}
                       className={`group w-[140px] overflow-hidden rounded-2xl border text-left transition hover:-translate-y-1 hover:shadow-xl hover:shadow-black/40 ${
@@ -277,6 +278,14 @@ export default function App() {
                       </div>
                     </button>
                   ))}
+                  <button onClick={() => setPage("builds")} className="flex h-[224px] w-[140px] flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#333] text-gray-500 transition hover:border-[#5DBB3A] hover:bg-[#5DBB3A]/5 hover:text-[#5DBB3A]"><Plus size={28} /><span className="text-[13px] font-bold">Новая сборка</span></button>
+                </div>
+              </section>
+              <section>
+                <SectionTitle action={{ label: "Все серверы", onClick: () => setPage("servers") }}>Рекомендуемые серверы</SectionTitle>
+                <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-[#2b2b2b] bg-[#1A1A1A] p-4 transition hover:border-[#444]">
+                  <img src="https://placehold.co/320x90/332b24/d4a454?text=MineTown" alt="Демонстрационный баннер сервера" className="h-[90px] w-full rounded-xl object-cover sm:w-[320px]" />
+                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2.5"><h3 className="text-[16px] font-bold text-white">MineTown RP</h3><span className="h-2 w-2 rounded-full bg-[#5DBB3A]" /><span className="text-[13px] text-gray-400 font-medium">Пример сервера</span></div><p className="mt-2 text-[13px] text-gray-400">Демонстрационная карточка — адрес сервера не настроен.</p><span className="mt-3 inline-block rounded-md bg-[#F5A623]/15 px-2.5 py-1 text-[11px] font-bold text-[#F5A623]">Не подключён</span></div>
                 </div>
               </section>
             </div>
@@ -319,6 +328,13 @@ export default function App() {
                 Моды загружаются вместе с ZIP-архивом сборки и распаковываются
                 в папку instance/{selected?.id || "—"}/mods.
               </div>
+            </section>
+          )}
+
+          {["servers", "skins", "friends", "myserver"].includes(page) && (
+            <section className="space-y-4 py-3">
+              <h1 className="text-2xl font-extrabold text-white">{nav.find(item => item.id === page)?.label}</h1>
+              <div className="rounded-2xl border border-[#2b2b2b] bg-[#1A1A1A] p-6 text-sm text-gray-400">Этот раздел пока в разработке. Здесь появится функциональность NexLauncher.</div>
             </section>
           )}
 
