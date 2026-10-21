@@ -2,21 +2,24 @@ import React, { useEffect, useState } from "react";
 import {
   Play, Settings, Folder, Grid2X2, ChevronLeft, ChevronRight,
   Volume2, Image as ImageIcon, Plus, Box, Download, Server,
-  CheckCircle, X, Minus, Maximize2, RefreshCw
+  CheckCircle, X, Minus, Maximize2, RefreshCw, Users, Shirt, Flag
 } from "lucide-react";
 import { API_BASE } from "./config.js";
 
 const nav = [
   { id: "play", label: "Играть", Icon: Play },
   { id: "builds", label: "Мои сборки", Icon: Folder },
-  { id: "content", label: "Контент", Icon: Grid2X2 }
+  { id: "content", label: "Контент", Icon: Grid2X2 },
+  { id: "servers", label: "Серверы", Icon: Server },
+  { id: "skins", label: "Скины", Icon: Shirt },
+  { id: "friends", label: "Друзья", Icon: Users, badge: "1" },
+  { id: "myserver", label: "Мой сервер", Icon: Flag }
 ];
 
-function IconButton({ children, onClick, title }) {
+function IconButton({ children, onClick, title, className = "" }) {
   return (
     <button title={title} onClick={onClick}
-      className="grid h-9 w-9 place-items-center rounded-lg text-gray-400
-      transition hover:bg-[#303030] hover:text-white">
+      className={`grid h-9 w-9 place-items-center rounded-lg text-gray-400 transition hover:bg-[#303030] hover:text-white ${className}`}>
       {children}
     </button>
   );
@@ -54,8 +57,9 @@ export default function App() {
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         setApiOnline(true);
-        setPacks(data.packs || []);
-        if (data.packs?.length) setSelected(data.packs[0]);
+        const list = Array.isArray(data.packs) ? data.packs : [];
+        setPacks(list);
+        if (list.length) setSelected(list[0]);
       })
       .catch(() => setApiOnline(false));
   }, []);
@@ -119,10 +123,9 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4 p-3">
+      <div className="flex min-h-0 flex-1 gap-4 p-4">
         {/* Сайдбар */}
-        <aside className={`${collapsed ? "w-[66px]" : "w-[236px]"} flex shrink-0
-          flex-col rounded-xl bg-[#1b1b1d] p-2.5 transition-all duration-200`}>
+        <aside className={`${collapsed ? "w-[72px]" : "w-[240px]"} flex shrink-0 flex-col rounded-2xl bg-[#1A1A1A] p-3 transition-all duration-200`}>
           <button onClick={() => setCollapsed(!collapsed)}
             className="mb-4 flex h-10 items-center gap-3 rounded-lg px-3 text-xs
             font-semibold text-gray-500 hover:bg-[#252525] hover:text-white">
@@ -130,7 +133,7 @@ export default function App() {
             {!collapsed && "Свернуть"}
           </button>
           <nav className="space-y-1">
-            {nav.map(({ id, label, Icon }) => (
+            {nav.map(({ id, label, Icon, badge }) => (
               <button key={id} onClick={() => setPage(id)}
                 className={`flex h-10 w-full items-center gap-3 rounded-lg px-3
                 text-left text-sm font-semibold transition ${
@@ -138,8 +141,9 @@ export default function App() {
                     ? "bg-[#5dbb3a]/15 text-[#72c952]"
                     : "text-gray-400 hover:bg-[#252525] hover:text-white"
                 }`}>
-                <Icon size={18} />
-                {!collapsed && label}
+                <Icon size={20} className={page === id ? "text-[#5DBB3A]" : "text-gray-400"} />
+                {!collapsed && <span className="flex-1">{label}</span>}
+                {!collapsed && badge && <span className="grid h-5 w-5 place-items-center rounded-md bg-[#5DBB3A] text-[11px] font-bold text-black">{badge}</span>}
               </button>
             ))}
           </nav>
@@ -168,11 +172,10 @@ export default function App() {
         </aside>
 
         {/* Контент */}
-        <main className="min-w-0 flex-1 overflow-y-auto pr-1">
+        <main className="min-w-0 flex-1 overflow-y-auto pr-1 custom-scrollbar">
           {page === "play" && (
-            <div className="space-y-7 pb-5">
-              <section className="relative h-[300px] overflow-hidden rounded-xl
-                border border-[#292929] bg-[#27252c]">
+            <div className="space-y-6 pb-6">
+              <section className="relative h-[320px] overflow-hidden rounded-2xl bg-[#27252c]">
                 <img src="https://placehold.co/1500x600/625b65/c9d7c3?text=NEX+LAUNCHER"
                   alt="Пейзаж Minecraft" className="absolute inset-0 h-full w-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/5" />
@@ -180,7 +183,7 @@ export default function App() {
                   <IconButton title="Звук"><Volume2 size={17} /></IconButton>
                   <IconButton title="Фон"><ImageIcon size={17} /></IconButton>
                 </div>
-                <div className="absolute inset-x-6 bottom-6 flex items-end justify-between gap-4">
+                <div className="absolute inset-x-8 bottom-8 flex items-end justify-between gap-4">
                   <div className="min-w-0">
                     <p className="mb-1 text-[11px] font-extrabold tracking-[0.14em] text-[#c2d4b6]">
                       ПРОДОЛЖИТЬ
@@ -197,15 +200,12 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button className="grid h-12 w-12 place-items-center rounded-xl
-                      bg-black/60 text-white backdrop-blur hover:bg-black/80">
+                  <div className="flex shrink-0 items-center gap-3">
+                    <button className="grid h-14 w-14 place-items-center rounded-2xl bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition">
                       <Settings size={19} />
                     </button>
                     <button onClick={launch} disabled={status === "downloading" || !selected}
-                      className="flex h-12 items-center gap-3 rounded-xl bg-[#5dbb3a]
-                      px-6 font-bold text-white shadow-lg transition hover:bg-[#6ed44a]
-                      disabled:cursor-wait disabled:opacity-60">
+                      className="flex h-14 items-center gap-3 rounded-2xl bg-[#5DBB3A] px-8 text-[16px] font-bold text-white shadow-lg shadow-[#5DBB3A]/20 transition hover:bg-[#6ED44A] hover:scale-[1.02] disabled:cursor-wait disabled:opacity-70">
                       {status === "downloading"
                         ? <RefreshCw size={18} className="animate-spin" />
                         : <Play size={18} />}
@@ -257,23 +257,20 @@ export default function App() {
                 <SectionTitle action={{ label: "Все сборки", onClick: () => setPage("builds") }}>
                   Мои сборки
                 </SectionTitle>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-4">
                   {packs.map(pack => (
                     <button key={pack.id} onClick={() => setSelected(pack)}
-                      className={`group w-[132px] overflow-hidden rounded-xl border
-                      text-left transition hover:-translate-y-0.5 hover:shadow-xl
-                      hover:shadow-black/30 ${
+                      className={`group w-[140px] overflow-hidden rounded-2xl border text-left transition hover:-translate-y-1 hover:shadow-xl hover:shadow-black/40 ${
                         selected?.id === pack.id
                           ? "border-[#5dbb3a]/50 bg-[#233522]"
                           : "border-[#2b2b2b] bg-[#1e1e1e] hover:border-[#444]"
                       }`}>
-                      <div className="grid h-[132px] place-items-center
-                        bg-gradient-to-br from-[#777080] to-[#302d36]">
+                      <div className="grid h-[140px] place-items-center bg-gradient-to-br from-[#6a5f73] to-[#2e2a33]">
                         <Box size={52} strokeWidth={1.2}
                           className="text-white/60 transition group-hover:scale-110" />
                       </div>
-                      <div className="p-2">
-                        <p className="truncate text-xs font-bold text-[#76c953]">{pack.name}</p>
+                      <div className="p-3">
+                        <p className="truncate text-[13px] font-bold text-[#76c953]">{pack.name}</p>
                         <p className="mt-1 truncate text-[11px] text-gray-400">
                           {pack.modLoader} · {pack.mcVersion}
                         </p>
