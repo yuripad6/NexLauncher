@@ -5,6 +5,13 @@ contextBridge.exposeInMainWorld("nexLauncher", {
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
   launch: (opts) => ipcRenderer.invoke("game:launch", opts),
+  getSettings: () => ipcRenderer.invoke("settings:get"),
+  setUsername: (name) => ipcRenderer.invoke("settings:set-username", name),
+  listLocalBuilds: () => ipcRenderer.invoke("builds:list-local"),
+  createLocalBuild: (input) => ipcRenderer.invoke("builds:create-local", input),
+  searchMods: (input) => ipcRenderer.invoke("modrinth:search", input),
+  installMod: (input) => ipcRenderer.invoke("modrinth:install", input),
+  importFromTL: (input) => ipcRenderer.invoke("import:from-tlauncher", input),
   onProgress: (cb) => {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("game:progress", handler);
