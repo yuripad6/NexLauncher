@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Play, Settings, Folder, Grid2X2, ChevronLeft, ChevronRight,
   Volume2, Image as ImageIcon, Plus, Box, Download, Server,
-  CheckCircle, X, Minus, Maximize2, RefreshCw, Users, Shirt, Flag
+  CheckCircle, X, Minus, Maximize2, RefreshCw, Users, Shirt, Flag, Search, Upload
 } from "lucide-react";
 import { API_BASE } from "./config.js";
 
@@ -50,6 +50,28 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
+  const [username, setUsername] = useState("Player");
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [tempName, setTempName] = useState("Player");
+  const [localBuilds, setLocalBuilds] = useState([]);
+  const [showBuildModal, setShowBuildModal] = useState(false);
+  const [buildName, setBuildName] = useState("");
+  const [buildVersion, setBuildVersion] = useState("1.20.1");
+  const [buildLoader, setBuildLoader] = useState("Vanilla");
+  const [showModsModal, setShowModsModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [modAction, setModAction] = useState("");
+
+  useEffect(() => {
+    if (!window.nexLauncher) return;
+    window.nexLauncher.getSettings().then(settings => {
+      setUsername(settings.username || "Player");
+      setTempName(settings.username || "Player");
+    }).catch(() => {});
+    window.nexLauncher.listLocalBuilds().then(setLocalBuilds).catch(() => {});
+  }, []);
 
   // Загружаем список сборок с PHP API при старте.
   useEffect(() => {
@@ -89,8 +111,9 @@ export default function App() {
     try {
       await window.nexLauncher.launch({
         packId: selected.id,
-        username: "Player",
-        ram: 4096
+        username,
+        ram: 2048,
+        ...(selected.isLocal ? { localBuildId: selected.id } : {})
       });
     } catch (err) {
       setStatus("error");
@@ -158,16 +181,16 @@ export default function App() {
               <Settings size={18} />
               {!collapsed && "Настройки"}
             </button>
-            <div className="flex items-center gap-3 rounded-lg p-2 hover:bg-[#252525]">
+            <button onClick={() => { setTempName(username); setShowNameModal(true); }} className="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-[#252525]">
               <img src="https://placehold.co/80x80/daa38b/242424?text=P"
                 alt="Аватар" className="h-10 w-10 rounded-xl" />
               {!collapsed && (
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-bold text-white">Player</div>
+                  <div className="truncate text-sm font-bold text-white">{username}</div>
                   <div className="truncate text-xs text-gray-500">Guest Mode</div>
                 </div>
               )}
-            </div>
+            </button>
           </div>
         </aside>
 
@@ -258,7 +281,7 @@ export default function App() {
                   Мои сборки
                 </SectionTitle>
                 <div className="flex flex-wrap gap-4">
-                  {packs.length === 0 && <div className="flex min-h-[180px] w-full max-w-md flex-col items-center justify-center rounded-2xl border border-dashed border-[#333] p-6 text-center"><Box size={34} className="mb-3 text-gray-600" /><p className="font-bold text-white">Пока нет сборок</p><p className="mt-2 text-sm text-gray-500">Добавь сборку через API, чтобы запустить Minecraft.</p></div>}
+                  {packs.length === 0 && localBuilds.length === 0 && <div className="flex min-h-[180px] w-full max-w-md flex-col items-center justify-center rounded-2xl border border-dashed border-[#333] p-6 text-center"><Box size={34} className="mb-3 text-gray-600" /><p className="font-bold text-white">Пока нет сборок</p><p className="mt-2 text-sm text-gray-500">Добавь сборку через API, чтобы запустить Minecraft.</p></div>}
                   {packs.map(pack => (
                     <button key={pack.id} onClick={() => setSelected(pack)}
                       className={`group w-[140px] overflow-hidden rounded-2xl border text-left transition hover:-translate-y-1 hover:shadow-xl hover:shadow-black/40 ${
@@ -368,6 +391,19 @@ export default function App() {
           )}
         </main>
       </div>
+      {showNameModal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-[#333] bg-[#1b1b1b] p-6 shadow-2xl">
+            <h2 className="mb-4 text-lg font-bold text-white">Сменить ник</h2>
+            <input value={tempName} maxLength={16} onChange={e => setTempName(e.target.value)} placeholder="Например, Player123" className="w-full rounded-lg border border-[#333] bg-[#121212] px-3 py-2.5 text-white outline-none focus:border-[#5DBB3A]" />
+            <p className="mt-2 text-xs text-gray-500">3–16 символов: латинские буквы, цифры и подчёркивание.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setShowNameModal(false)} className="px-4 py-2 text-gray-400 hover:text-white">Отмена</button>
+              <button onClick={async () => { try { const saved = await window.nexLauncher.setUsername(tempName); setUsername(saved.username); setShowNameModal(false); } catch (e) { alert(e.message); } }} className="rounded-lg bg-[#5DBB3A] px-4 py-2 font-bold text-white hover:bg-[#6ED44A]">Сохранить</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
