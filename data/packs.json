@@ -1,0 +1,13 @@
+[
+  {
+    "id": "example-vanilla",
+    "name": "Пример Vanilla",
+    "mcVersion": "1.20.1",
+    "modLoader": "vanilla",
+    "modLoaderVersion": "",
+    "zipUrl": "https://example.com/releases/example-vanilla.zip",
+    "sha256": "",
+    "server": "",
+    "enabled": true
+  }
+]
