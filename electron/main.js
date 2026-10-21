@@ -141,7 +141,9 @@ ipcMain.handle("modrinth:search", async (_event, input = {}) => {
 ipcMain.handle("modrinth:install", async (_event, input = {}) => {
   const build = validBuildId(String(input.buildId ?? "")); const projectId = String(input.projectId ?? "").trim();
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(projectId)) throw new Error("Некорректный ID проекта Modrinth");
-  const versionFilter = { game_versions: [build.mcVersion] };\n  if (["Fabric", "Forge", "NeoForge", "Quilt"].includes(build.modLoader)) versionFilter.loaders = [build.modLoader.toLowerCase()];\n  const params = new URLSearchParams({ game_versions: JSON.stringify(versionFilter.game_versions), ...(versionFilter.loaders ? { loaders: JSON.stringify(versionFilter.loaders) } : {}) });
+  const versionFilter = { game_versions: [build.mcVersion] };
+  if (["Fabric", "Forge", "NeoForge", "Quilt"].includes(build.modLoader)) versionFilter.loaders = [build.modLoader.toLowerCase()];
+  const params = new URLSearchParams({ game_versions: JSON.stringify(versionFilter.game_versions), ...(versionFilter.loaders ? { loaders: JSON.stringify(versionFilter.loaders) } : {}) });
   const response = await fetch("https://api.modrinth.com/v2/project/" + encodeURIComponent(projectId) + "/version?" + params, { headers: { "User-Agent": "NexLauncher/1.0 (https://github.com/yuripad6/NexLauncher)" } });
   if (!response.ok) throw new Error("Не удалось получить версии проекта Modrinth"); const versions = await response.json();
   const compatible = versions.find(version => version.files?.length); if (!compatible) throw new Error("Для Minecraft " + build.mcVersion + " не найден подходящий файл");
