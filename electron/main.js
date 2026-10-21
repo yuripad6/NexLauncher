@@ -122,7 +122,8 @@ ipcMain.handle("builds:create-local", async (_event, input) => {
   const name = String(input?.name ?? "").trim(); const mcVersion = String(input?.mcVersion ?? "").trim();
   if (name.length < 2 || name.length > 40) throw new Error("Название сборки: от 2 до 40 символов");
   if (!/^\d+\.\d+(?:\.\d+)?$/.test(mcVersion)) throw new Error("Укажи версию Minecraft, например 1.20.1");
-  const build = { id: crypto.randomUUID(), name, mcVersion, modLoader: "Vanilla", createdAt: new Date().toISOString() };
+  const allowedLoaders = ["Vanilla", "Fabric", "Forge", "NeoForge", "Quilt"]; const modLoader = allowedLoaders.includes(input?.modLoader) ? input.modLoader : "Vanilla";
+  const build = { id: crypto.randomUUID(), name, mcVersion, modLoader, createdAt: new Date().toISOString() };
   const builds = readLocalBuilds(); builds.push(build); saveJson(localBuildsPath(), builds);
   await fsp.mkdir(path.join(instancesRoot(), build.id), { recursive: true }); return build;
 });
@@ -168,7 +169,26 @@ ipcMain.handle("import:from-tlauncher", async (_event, input = {}) => {
 });
 ipcMain.handle("game:launch", async (_e, opts) => {
   try {
-    const { packId, username = "Player", ram = 4096 } = opts;
+    const { packId, localBuildId, username = loadSettings().username, ram = loadSettings().ram } = opts;
+    if (localBuildId) {
+      const build = validBuildId(String(localBuildId));
+      if (build.modLoader !== "Vanilla") {
+        throw new Error("Для запуска сборки " + build.modLoader + " сначала нужно установить этот загрузчик. Сейчас готов только запуск Vanilla.");
+      }
+      const instanceDir = path.join(instancesRoot(), build.id);
+      await fsp.mkdir(instanceDir, { recursive: true });
+      emit({ progress: 10, message: "Запуск Minecraft " + build.mcVersion + "..." });
+      launcher = new Client();
+      launcher.on("data", line => console.log("[MCLC]", line));
+      await launcher.launch({
+        authorization: Authenticator.getAuth(username),
+        root: instanceDir,
+        version: { number: build.mcVersion, type: "release" },
+        memory: { max: String(Math.max(1024, Number(ram) || 2048)) + "M", min: "512M" }
+      });
+      emit({ type: "started", progress: 100, message: "Minecraft запущен" });
+      return { ok: true };
+    }
     const apiBase = process.env.NEX_API_BASE ||
       "https://zeskin.freedev.app/api/index.php";
 
