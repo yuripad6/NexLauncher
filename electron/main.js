@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import unzipper from "unzipper";
-import { Client, Authenticator } from "minecraft-launcher-core";
+import minecraftLauncherCore from "minecraft-launcher-core";
+const { Client, Authenticator } = minecraftLauncherCore;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow;
