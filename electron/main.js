@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "node:path";
+import os from "node:os";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
-import { Transform } from "node:stream";
+import { Transform, Readable } from "node:stream";
 import unzipper from "unzipper";
 import minecraftLauncherCore from "minecraft-launcher-core";
 const { Client, Authenticator } = minecraftLauncherCore;
@@ -13,6 +14,32 @@ const { Client, Authenticator } = minecraftLauncherCore;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow;
 let launcher = null;
+
+function findLauncherDirs() {
+  const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  return {
+    tlauncher: path.join(appData, ".minecraft"),
+    prismCandidates: [path.join(appData, "PrismLauncher", "instances"), path.join(localAppData, "PrismLauncher", "instances"), path.join(localAppData, "Programs", "PrismLauncher", "instances")]
+  };
+}
+
+function emitModProgress(event, data) {
+  if (!event.sender.isDestroyed()) event.sender.send("mod:progress", data);
+}
+
+async function copyImportFolders(sourceDir, destinationDir) {
+  const copied = [];
+  for (const folder of ["mods", "config", "resourcepacks", "shaderpacks"]) {
+    const source = path.join(sourceDir, folder);
+    if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) continue;
+    const destination = path.join(destinationDir, folder);
+    await fsp.mkdir(destination, { recursive: true });
+    await fsp.cp(source, destination, { recursive: true, force: true });
+    copied.push(folder);
+  }
+  return copied;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -138,37 +165,89 @@ ipcMain.handle("modrinth:search", async (_event, input = {}) => {
   return (data.hits || []).map(hit => ({ id: hit.project_id, slug: hit.slug, title: hit.title, description: hit.description, icon: hit.icon_url, downloads: hit.downloads, projectType: hit.project_type }));
 });
 
-ipcMain.handle("modrinth:install", async (_event, input = {}) => {
-  const build = validBuildId(String(input.buildId ?? "")); const projectId = String(input.projectId ?? "").trim();
+ipcMain.handle("modrinth:install", async (event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const projectId = String(input.projectId ?? "").trim();
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(projectId)) throw new Error("Некорректный ID проекта Modrinth");
   const versionFilter = { game_versions: [build.mcVersion] };
   if (["Fabric", "Forge", "NeoForge", "Quilt"].includes(build.modLoader)) versionFilter.loaders = [build.modLoader.toLowerCase()];
   const params = new URLSearchParams({ game_versions: JSON.stringify(versionFilter.game_versions), ...(versionFilter.loaders ? { loaders: JSON.stringify(versionFilter.loaders) } : {}) });
   const response = await fetch("https://api.modrinth.com/v2/project/" + encodeURIComponent(projectId) + "/version?" + params, { headers: { "User-Agent": "NexLauncher/1.0 (https://github.com/yuripad6/NexLauncher)" } });
-  if (!response.ok) throw new Error("Не удалось получить версии проекта Modrinth"); const versions = await response.json();
-  const compatible = versions.find(version => version.files?.length); if (!compatible) throw new Error("Для Minecraft " + build.mcVersion + " не найден подходящий файл");
+  if (!response.ok) throw new Error("Не удалось получить версии проекта Modrinth");
+  const versions = await response.json();
+  const compatible = versions.find(version => version.files?.length);
+  if (!compatible) throw new Error("Для Minecraft " + build.mcVersion + " не найден подходящий файл");
   const file = compatible.files.find(item => item.primary) || compatible.files[0];
   if (!file?.url || !/^[^/\\]+\.(jar|zip)$/i.test(file.filename)) throw new Error("Modrinth вернул неподдерживаемое имя файла");
-  const modsDir = path.join(instancesRoot(), build.id, "mods"); await fsp.mkdir(modsDir, { recursive: true }); const dest = path.join(modsDir, file.filename);
-  const download = await fetch(file.url, { redirect: "follow" }); if (!download.ok) throw new Error("Ошибка скачивания мода: HTTP " + download.status);
-  const bytes = Buffer.from(await download.arrayBuffer()); if (bytes.length > 200 * 1024 * 1024) throw new Error("Файл слишком большой (лимит 200 МБ)");
-  await fsp.writeFile(dest, bytes, { flag: "wx" }).catch(error => { if (error.code === "EEXIST") throw new Error("Этот файл уже установлен"); throw error; });
-  return { filename: file.filename, version: compatible.name };
+  const modsDir = path.join(instancesRoot(), build.id, "mods");
+  await fsp.mkdir(modsDir, { recursive: true });
+  const dest = path.join(modsDir, file.filename);
+  if (fs.existsSync(dest)) throw new Error("Этот файл уже установлен");
+  emitModProgress(event, { id: projectId, progress: 0, status: "starting", filename: file.filename });
+  const download = await fetch(file.url, { redirect: "follow" });
+  if (!download.ok || !download.body) throw new Error("Ошибка скачивания мода: HTTP " + download.status);
+  const total = Number(download.headers.get("content-length")) || Number(file.size) || 0;
+  let downloaded = 0;
+  const temp = dest + ".part-" + crypto.randomUUID();
+  const meter = new Transform({
+    transform(chunk, _encoding, callback) {
+      downloaded += chunk.length;
+      if (downloaded > 200 * 1024 * 1024) return callback(new Error("Файл слишком большой (лимит 200 МБ)"));
+      const percent = total ? Math.min(99, Math.floor(downloaded / total * 100)) : 0;
+      emitModProgress(event, { id: projectId, progress: percent, status: "downloading", filename: file.filename });
+      callback(null, chunk);
+    }
+  });
+  try {
+    await pipeline(Readable.fromWeb(download.body), meter, fs.createWriteStream(temp, { flags: "wx" }));
+    await fsp.rename(temp, dest);
+    emitModProgress(event, { id: projectId, progress: 100, status: "done", filename: file.filename });
+    return { filename: file.filename, version: compatible.name };
+  } catch (error) {
+    await fsp.rm(temp, { force: true }).catch(() => {});
+    emitModProgress(event, { id: projectId, progress: 0, status: "error", error: error.message });
+    throw error;
+  }
 });
 
 ipcMain.handle("import:from-tlauncher", async (_event, input = {}) => {
   const build = validBuildId(String(input.buildId ?? ""));
-  const result = await dialog.showOpenDialog(mainWindow, { title: "Выберите папку сборки TLauncher или .minecraft", properties: ["openDirectory"] });
-  if (result.canceled || !result.filePaths.length) return { canceled: true };
-  const sourceDir = result.filePaths[0]; const instanceDir = path.join(instancesRoot(), build.id); const copied = [];
-  for (const folder of ["mods", "config", "resourcepacks", "shaderpacks"]) {
-    const source = path.join(sourceDir, folder); if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) continue;
-    const destination = path.join(instanceDir, folder); await fsp.mkdir(destination, { recursive: true });
-    await fsp.cp(source, destination, { recursive: true, force: false, errorOnExist: false }); copied.push(folder);
+  const sourceDirDefault = findLauncherDirs().tlauncher;
+  let sourceDir = sourceDirDefault;
+  if (!fs.existsSync(path.join(sourceDir, "mods"))) {
+    const result = await dialog.showOpenDialog(mainWindow, { title: "Выберите папку .minecraft или сборки TLauncher", defaultPath: fs.existsSync(sourceDir) ? sourceDir : os.homedir(), properties: ["openDirectory"] });
+    if (result.canceled || !result.filePaths.length) return { canceled: true };
+    sourceDir = result.filePaths[0];
   }
-  if (!copied.length) throw new Error("Не найдены папки mods, config, resourcepacks или shaderpacks. Выбери папку профиля/сборки.");
+  const copied = await copyImportFolders(sourceDir, path.join(instancesRoot(), build.id));
+  if (!copied.length) throw new Error("В выбранной папке не найдены mods, config, resourcepacks или shaderpacks.");
   return { copied, source: sourceDir };
 });
+
+ipcMain.handle("import:from-prism", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const prismRoot = findLauncherDirs().prismCandidates.find(dir => fs.existsSync(dir)) || os.homedir();
+  const result = await dialog.showOpenDialog(mainWindow, { title: "Выберите папку экземпляра Prism Launcher", defaultPath: prismRoot, properties: ["openDirectory"] });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  const selectedDir = result.filePaths[0];
+  const nestedMinecraft = path.join(selectedDir, "minecraft");
+  const sourceDir = fs.existsSync(path.join(nestedMinecraft, "mods")) ? nestedMinecraft : selectedDir;
+  const copied = await copyImportFolders(sourceDir, path.join(instancesRoot(), build.id));
+  if (!copied.length) throw new Error("В выбранном экземпляре Prism не найдены папки mods, config, resourcepacks или shaderpacks.");
+  return { copied, source: selectedDir };
+});
+
+ipcMain.handle("import:from-zip", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const result = await dialog.showOpenDialog(mainWindow, { title: "Выберите ZIP-архив со сборкой Minecraft", filters: [{ name: "ZIP-архивы", extensions: ["zip"] }], properties: ["openFile"] });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  const zipPath = result.filePaths[0];
+  const stat = await fsp.stat(zipPath);
+  if (stat.size > 1024 * 1024 * 1024) throw new Error("ZIP-архив слишком большой (лимит 1 ГБ).");
+  await extractZip(zipPath, path.join(instancesRoot(), build.id));
+  return { imported: true, source: zipPath };
+});
+
 ipcMain.handle("game:launch", async (_e, opts) => {
   try {
     const { packId, localBuildId, username = loadSettings().username, ram = loadSettings().ram } = opts;
