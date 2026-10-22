@@ -345,6 +345,63 @@ ipcMain.handle("modrinth:install", async (event, input = {}) => {
   }
 });
 
+function getCurseForgeApiKey() {
+  const key = String(process.env.CURSEFORGE_API_KEY || "").trim();
+  if (!key) throw new Error("Для CurseForge нужен API-ключ. Задай переменную окружения CURSEFORGE_API_KEY и перезапусти NexLauncher. Не публикуй ключ в GitHub.");
+  return key;
+}
+
+async function fetchCurseForge(endpoint) {
+  const response = await fetch("https://api.curseforge.com/v1/" + endpoint, { headers: { Accept: "application/json", "x-api-key": getCurseForgeApiKey() } });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) throw new Error("CurseForge отклонил API-ключ (HTTP " + response.status + "). Проверь ключ и доступ API.");
+    throw new Error("Ошибка CurseForge API: HTTP " + response.status);
+  }
+  return response.json();
+}
+
+ipcMain.handle("curseforge:search", async (_event, input = {}) => {
+  const query = String(input.query ?? "").trim();
+  const mcVersion = String(input.mcVersion ?? "").trim();
+  const params = new URLSearchParams({ gameId: "432", classId: "6", pageSize: "20", sortField: "1", sortOrder: "desc" });
+  if (query) params.set("searchFilter", query);
+  if (mcVersion) params.set("gameVersion", mcVersion);
+  const data = await fetchCurseForge("mods/search?" + params.toString());
+  return (data.data || []).map(mod => ({ id: String(mod.id), title: mod.name, description: mod.summary || "", icon: mod.logo?.thumbnailUrl || mod.logo?.url || "", downloads: mod.downloadCount || 0, author: mod.authors?.[0]?.name || "Unknown", source: "curseforge", url: mod.links?.websiteUrl || "" }));
+});
+
+ipcMain.handle("curseforge:install", async (event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const projectId = String(input.projectId ?? "").trim();
+  if (!/^\d{1,12}$/.test(projectId)) throw new Error("Некорректный ID проекта CurseForge");
+  const params = new URLSearchParams({ gameVersion: build.mcVersion, pageSize: "50", sortField: "2", sortOrder: "desc" });
+  const data = await fetchCurseForge("mods/" + encodeURIComponent(projectId) + "/files?" + params.toString());
+  const files = Array.isArray(data.data) ? data.data : [];
+  const file = files.find(item => item.isAvailable && item.downloadUrl && item.fileName && /\.jar$/i.test(item.fileName));
+  if (!file) throw new Error("CurseForge не предоставил прямую ссылку на совместимый .jar. Выбери мод с доступным скачиванием или установи его вручную с сайта CurseForge.");
+  if (file.fileLength > 200 * 1024 * 1024) throw new Error("Файл слишком большой (лимит 200 МБ)");
+  const modsDir = path.join(instancesRoot(), build.id, "mods");
+  await fsp.mkdir(modsDir, { recursive: true });
+  const dest = path.join(modsDir, path.basename(file.fileName));
+  if (fs.existsSync(dest)) throw new Error("Этот файл уже установлен");
+  emitModProgress(event, { id: projectId, source: "curseforge", progress: 0, status: "starting", filename: file.fileName });
+  const temp = dest + ".part-" + crypto.randomUUID();
+  try {
+    const response = await fetch(file.downloadUrl, { redirect: "follow" });
+    if (!response.ok || !response.body) throw new Error("Не удалось скачать мод с CurseForge: HTTP " + response.status);
+    const total = Number(response.headers.get("content-length")) || file.fileLength || 0;
+    let downloaded = 0;
+    const meter = new Transform({ transform(chunk, _encoding, callback) { downloaded += chunk.length; if (downloaded > 200 * 1024 * 1024) return callback(new Error("Файл слишком большой (лимит 200 МБ)")); emitModProgress(event, { id: projectId, source: "curseforge", progress: total ? Math.min(99, Math.floor(downloaded / total * 100)) : 0, status: "downloading", filename: file.fileName }); callback(null, chunk); } });
+    await pipeline(Readable.fromWeb(response.body), meter, fs.createWriteStream(temp, { flags: "wx" }));
+    await fsp.rename(temp, dest);
+    emitModProgress(event, { id: projectId, source: "curseforge", progress: 100, status: "done", filename: file.fileName });
+    return { filename: file.fileName, fileId: file.id };
+  } catch (error) {
+    await fsp.rm(temp, { force: true }).catch(() => {});
+    emitModProgress(event, { id: projectId, source: "curseforge", progress: 0, status: "error", error: error.message });
+    throw error;
+  }
+});
 ipcMain.handle("import:auto-detect", async (_event, input = {}) => {
   const type = String(input.type || "");
   if (!["prism", "tlauncher", "zip"].includes(type)) throw new Error("Неизвестный тип импорта.");
