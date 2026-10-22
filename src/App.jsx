@@ -108,6 +108,20 @@ export default function App() {
     return off;
   }, []);
 
+  async function handleImport(type) {
+    try {
+      const imported = await window.nexLauncher.importAuto(type);
+      if (!imported) return;
+      const build = { ...imported, isLocal: true, server: null };
+      setLocalBuilds(prev => [build, ...prev.filter(item => item.id !== build.id)]);
+      setSelected(build);
+      setPage("builds");
+      alert(`Сборка «${build.name}» успешно импортирована! Версия Minecraft: ${build.mcVersion}, загрузчик: ${build.modLoader}.`);
+    } catch (err) {
+      alert("Ошибка импорта: " + (err.message || "Не удалось импортировать сборку"));
+    }
+  }
+
   async function launch() {
     if (!selected || !window.nexLauncher) {
       setError("Лаунчер должен быть запущен как Electron-приложение.");
@@ -332,7 +346,7 @@ export default function App() {
 
           {page === "builds" && (
             <section className="space-y-5 py-3">
-              <div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-extrabold text-white">Мои сборки</h1><button onClick={() => setShowBuildModal(true)} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white hover:bg-[#6ed44a]"><Plus size={16} className="mr-1 inline" />Создать</button></div>
+              <div className="flex flex-col gap-3"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-extrabold text-white">Мои сборки</h1><button onClick={() => setShowBuildModal(true)} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white hover:bg-[#6ed44a]"><Plus size={16} className="mr-1 inline" />Создать</button></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><button onClick={() => handleImport("prism")} className="rounded-xl border border-[#333] bg-[#1a1a1a] p-3 text-left text-sm text-white transition hover:border-[#5dbb3a]">📦 Импорт из Prism Launcher</button><button onClick={() => handleImport("tlauncher")} className="rounded-xl border border-[#333] bg-[#1a1a1a] p-3 text-left text-sm text-white transition hover:border-[#5dbb3a]">📦 Импорт из TLauncher / .minecraft</button><button onClick={() => handleImport("zip")} className="rounded-xl border border-[#333] bg-[#1a1a1a] p-3 text-left text-sm text-white transition hover:border-[#5dbb3a]">🗜 Импорт готовой сборки ZIP</button></div></div>
               {localBuilds.map(build => (
                 <div key={build.id} className="flex flex-wrap items-center gap-4 rounded-xl border border-[#2b2b2b] bg-[#1c1c1c] p-4">
                   <div className="grid h-14 w-14 place-items-center rounded-xl bg-[#253c21]"><Box size={28} /></div>
