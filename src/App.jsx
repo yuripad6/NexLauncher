@@ -10,6 +10,7 @@ const nav = [
   { id: "play", label: "Играть", Icon: Play },
   { id: "builds", label: "Мои сборки", Icon: Folder },
   { id: "content", label: "Контент", Icon: Grid2X2 },
+  { id: "mods", label: "Моды", Icon: Download },
   { id: "servers", label: "Серверы", Icon: Server },
   { id: "skins", label: "Скины", Icon: Shirt },
   { id: "friends", label: "Друзья", Icon: Users, badge: "1" },
@@ -375,6 +376,141 @@ export default function App() {
                   </button>
                 </div>
               ))}
+            </section>
+          )}
+
+          {page === "mods" && (
+            <section className="flex h-full min-h-0 flex-col gap-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 className="text-2xl font-extrabold text-white">Моды</h1>
+                  <p className="mt-1 text-sm text-gray-500">Поиск и установка модов из Modrinth</p>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <span>Сборка:</span>
+                  <select
+                    value={selected?.isLocal ? selected.id : ""}
+                    onChange={e => {
+                      const build = localBuilds.find(item => item.id === e.target.value);
+                      if (build) setSelected({ ...build, isLocal: true, server: null });
+                    }}
+                    className="max-w-[240px] rounded-lg border border-[#333] bg-[#121212] px-3 py-2 text-white outline-none focus:border-[#5DBB3A]"
+                  >
+                    <option value="">Выбери локальную сборку</option>
+                    {localBuilds.map(build => <option key={build.id} value={build.id}>{build.name} · {build.mcVersion}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-[#2b2b2b] bg-[#1A1A1A] p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Версия Minecraft</p>
+                  <p className="mt-2 text-sm font-semibold text-white">{selected?.isLocal ? selected.mcVersion : "Не выбрана"}</p>
+                </div>
+                <div className="rounded-xl border border-[#2b2b2b] bg-[#1A1A1A] p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Загрузчик модов</p>
+                  <p className="mt-2 text-sm font-semibold text-white">{selected?.isLocal ? selected.modLoader : "Не выбрана"}</p>
+                </div>
+              </div>
+
+              <form className="flex shrink-0 gap-2" onSubmit={async e => {
+                e.preventDefault();
+                if (!searchQuery.trim()) return;
+                setIsSearching(true);
+                try {
+                  const results = await window.nexLauncher.searchMods({
+                    query: searchQuery.trim(),
+                    mcVersion: selected?.isLocal ? selected.mcVersion : "",
+                    loader: selected?.isLocal ? selected.modLoader : ""
+                  });
+                  setSearchResults(results);
+                } catch (err) {
+                  alert("Ошибка поиска Modrinth: " + (err.message || "не удалось выполнить поиск"));
+                } finally {
+                  setIsSearching(false);
+                }
+              }}>
+                <div className="relative min-w-0 flex-1">
+                  <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Поиск модов по названию..."
+                    className="w-full rounded-lg border border-[#333] bg-[#121212] py-2.5 pl-10 pr-4 text-sm text-white outline-none focus:border-[#5DBB3A]" />
+                </div>
+                <button type="submit" disabled={isSearching || !searchQuery.trim()}
+                  className="rounded-lg bg-[#5DBB3A] px-5 font-bold text-white transition hover:bg-[#6ED44A] disabled:opacity-50">
+                  {isSearching ? "Поиск…" : "Найти"}
+                </button>
+              </form>
+
+              <div className="custom-scrollbar min-h-0 flex-1 overflow-auto rounded-xl border border-[#2b2b2b] bg-[#1A1A1A]">
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-[#222] text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="p-3 font-semibold">Мод</th>
+                      <th className="p-3 text-right font-semibold">Скачивания</th>
+                      <th className="p-3 text-right font-semibold">Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2b2b2b]">
+                    {searchResults.map(mod => {
+                      const downloadState = modDownloads[mod.id];
+                      const busy = ["starting", "downloading"].includes(downloadState?.status);
+                      return (
+                        <tr key={mod.id} className="transition hover:bg-[#222]">
+                          <td className="p-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              {mod.icon ? <img src={mod.icon} alt="" className="h-10 w-10 shrink-0 rounded-lg bg-[#333] object-cover" /> : <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#303030]"><Box size={19} /></div>}
+                              <div className="min-w-0">
+                                <p className="font-bold text-white">{mod.title}</p>
+                                <p className="mt-0.5 line-clamp-2 text-xs text-gray-400">{mod.description}</p>
+                                {downloadState?.status === "error" && <p className="mt-1 text-xs text-red-400">{downloadState.error || "Ошибка скачивания"}</p>}
+                                {busy && <div className="mt-2 max-w-xs">
+                                  <div className="mb-1 flex justify-between text-[11px] text-[#9be47d]"><span>{downloadState.status === "starting" ? "Подготовка…" : "Скачивание…"}</span><span>{downloadState.progress}%</span></div>
+                                  <div className="h-1.5 overflow-hidden rounded-full bg-[#333]"><div className="h-full rounded-full bg-[#5dbb3a] transition-all" style={{ width: downloadState.progress + "%" }} /></div>
+                                </div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right tabular-nums text-gray-400">{Number(mod.downloads || 0).toLocaleString()}</td>
+                          <td className="p-3 text-right">
+                            {downloadState?.status === "done" ? (
+                              <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap font-bold text-[#5DBB3A]"><CheckCircle size={15} /> Установлен</span>
+                            ) : (
+                              <button disabled={!selected?.isLocal || modAction === mod.id || busy}
+                                onClick={async () => {
+                                  if (!selected?.isLocal) {
+                                    alert("Сначала выбери локальную сборку в верхней части вкладки.");
+                                    return;
+                                  }
+                                  setModAction(mod.id);
+                                  try {
+                                    await window.nexLauncher.installMod({ projectId: mod.id, buildId: selected.id });
+                                    setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 100, status: "done" } }));
+                                  } catch (err) {
+                                    setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 0, status: "error", error: err.message || "Ошибка установки" } }));
+                                  } finally {
+                                    setModAction("");
+                                  }
+                                }}
+                                className="min-w-[112px] rounded-lg bg-[#303f2a] px-3 py-2 text-xs font-bold text-[#9be47d] transition hover:bg-[#3a5032] disabled:cursor-not-allowed disabled:opacity-40">
+                                {busy ? "Скачивание…" : modAction === mod.id ? "Подготовка…" : downloadState?.status === "error" ? "Повторить" : "Установить"}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {!searchResults.length && (
+                  <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center">
+                    <Search size={28} className="mb-3 text-gray-600" />
+                    <p className="text-sm text-gray-400">{isSearching ? "Ищем моды в Modrinth…" : "Введи название мода и нажми «Найти»."}</p>
+                  </div>
+                )}
+              </div>
+              {!selected?.isLocal && <p className="shrink-0 text-xs text-amber-300">Для установки выбери локальную сборку или создай её в разделе «Мои сборки».</p>}
+              {selected?.isLocal && <p className="shrink-0 text-xs text-gray-500">Моды сохраняются в папку выбранной сборки. Для запуска требуется совместимый установленный загрузчик Fabric, Forge, NeoForge или Quilt.</p>}
             </section>
           )}
 
