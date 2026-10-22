@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("nexLauncher", {
   createLocalBuild: (input) => ipcRenderer.invoke("builds:create-local", input),
   searchMods: (input) => ipcRenderer.invoke("modrinth:search", input),
   installMod: (input) => ipcRenderer.invoke("modrinth:install", input),
+  searchModsCurseForge: (input) => ipcRenderer.invoke("curseforge:search", input),
+  installModCurseForge: (input) => ipcRenderer.invoke("curseforge:install", input),
   importAuto: (type) => ipcRenderer.invoke("import:auto-detect", { type }),
   importFromTL: (input) => ipcRenderer.invoke("import:from-tlauncher", input),
   importFromPrism: (input) => ipcRenderer.invoke("import:from-prism", input),
