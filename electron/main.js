@@ -105,6 +105,8 @@ function detectBuildMetadata(sourceDir, type) {
       for (const [key, loader] of [["fabric-loader", "Fabric"], ["forge", "Forge"], ["neoforge", "NeoForge"], ["quilt-loader", "Quilt"]]) {
         if (index.dependencies?.[key]) { modLoader = loader; modLoaderVersion = index.dependencies[key]; break; }
       }
+      const overrides = path.join(sourceDir, "overrides");
+      if (fs.existsSync(overrides)) contentDir = overrides;
     } else {
       const prismMinecraft = path.join(sourceDir, "minecraft");
       if (fs.existsSync(path.join(prismMinecraft, "mods")) && fs.existsSync(path.join(sourceDir, "instance.cfg"))) {
@@ -161,14 +163,14 @@ async function createImportedBuild(sourceDir, type) {
   saveJson(localBuildsPath(), builds);
   const targetDir = path.join(instancesRoot(), build.id);
   await fsp.mkdir(targetDir, { recursive: true });
-  const copied = await copyImportFolders(metadata.contentDir, targetDir);
-  if (!copied.length) {
-    const files = fs.readdirSync(metadata.contentDir);
-    if (!files.length) {
-      saveJson(localBuildsPath(), builds.filter(item => item.id !== build.id));
-      await fsp.rm(targetDir, { recursive: true, force: true });
-      throw new Error("В выбранной папке не найдены файлы сборки (mods, config, resourcepacks или shaderpacks).");
-    }
+  let copied = [];
+  try {
+    copied = await copyImportFolders(metadata.contentDir, targetDir);
+    if (!copied.length) throw new Error("В выбранной папке не найдены mods, config, resourcepacks или shaderpacks. Выбери папку с файлами самой сборки.");
+  } catch (error) {
+    saveJson(localBuildsPath(), builds.filter(item => item.id !== build.id));
+    await fsp.rm(targetDir, { recursive: true, force: true });
+    throw error;
   }
   return { ...build, copied };
 }
