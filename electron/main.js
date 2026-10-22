@@ -41,6 +41,139 @@ async function copyImportFolders(sourceDir, destinationDir) {
   return copied;
 }
 
+function parsePrismMetadata(instanceDir) {
+  const result = { name: path.basename(instanceDir), mcVersion: "", modLoader: "Vanilla", modLoaderVersion: "" };
+  const cfgPath = path.join(instanceDir, "instance.cfg");
+  if (fs.existsSync(cfgPath)) {
+    const cfg = fs.readFileSync(cfgPath, "utf8");
+    result.name = cfg.match(/^name=(.*)$/m)?.[1]?.trim() || result.name;
+    result.mcVersion = cfg.match(/^IntendedVersion=(.*)$/m)?.[1]?.trim() || "";
+  }
+  const packPath = path.join(instanceDir, "mmc-pack.json");
+  if (fs.existsSync(packPath)) {
+    const pack = readJson(packPath, {});
+    for (const component of (Array.isArray(pack.components) ? pack.components : [])) {
+      if (component.uid === "net.minecraft" && component.version) result.mcVersion = component.version;
+      else if (component.uid === "net.fabricmc.fabric-loader") { result.modLoader = "Fabric"; result.modLoaderVersion = component.version || ""; }
+      else if (component.uid === "net.minecraftforge") { result.modLoader = "Forge"; result.modLoaderVersion = component.version || ""; }
+      else if (component.uid === "net.neoforged") { result.modLoader = "NeoForge"; result.modLoaderVersion = component.version || ""; }
+      else if (component.uid === "org.quiltmc.quilt-loader") { result.modLoader = "Quilt"; result.modLoaderVersion = component.version || ""; }
+    }
+  }
+  return result;
+}
+
+function detectBuildMetadata(sourceDir, type) {
+  let name = path.basename(sourceDir) || "Imported Build";
+  let mcVersion = "";
+  let modLoader = "Vanilla";
+  let modLoaderVersion = "";
+  let contentDir = sourceDir;
+
+  if (type === "prism") {
+    const minecraftDir = path.join(sourceDir, "minecraft");
+    if (!fs.existsSync(minecraftDir) || !fs.statSync(minecraftDir).isDirectory()) {
+      throw new Error("Это не папка экземпляра Prism: внутри должна быть папка minecraft.");
+    }
+    const prism = parsePrismMetadata(sourceDir);
+    name = prism.name;
+    mcVersion = prism.mcVersion;
+    modLoader = prism.modLoader;
+    modLoaderVersion = prism.modLoaderVersion;
+    contentDir = minecraftDir;
+  } else {
+    const cursePath = path.join(sourceDir, "manifest.json");
+    const modrinthPath = path.join(sourceDir, "modrinth.index.json");
+    if (fs.existsSync(cursePath)) {
+      const manifest = readJson(cursePath, {});
+      name = manifest.name || name;
+      mcVersion = manifest.minecraft?.version || "";
+      const loader = (manifest.minecraft?.modLoaders || []).find(item => item.primary) || manifest.minecraft?.modLoaders?.[0];
+      if (loader?.id) {
+        const match = loader.id.match(/^(fabric|forge|neoforge|quilt)-(.*)$/i);
+        if (match) {
+          modLoader = ({ fabric: "Fabric", forge: "Forge", neoforge: "NeoForge", quilt: "Quilt" })[match[1].toLowerCase()];
+          modLoaderVersion = match[2];
+        }
+      }
+      const overrides = path.join(sourceDir, "overrides");
+      if (fs.existsSync(overrides)) contentDir = overrides;
+    } else if (fs.existsSync(modrinthPath)) {
+      const index = readJson(modrinthPath, {});
+      name = index.name || name;
+      mcVersion = index.dependencies?.minecraft || "";
+      for (const [key, loader] of [["fabric-loader", "Fabric"], ["forge", "Forge"], ["neoforge", "NeoForge"], ["quilt-loader", "Quilt"]]) {
+        if (index.dependencies?.[key]) { modLoader = loader; modLoaderVersion = index.dependencies[key]; break; }
+      }
+    } else {
+      const prismMinecraft = path.join(sourceDir, "minecraft");
+      if (fs.existsSync(path.join(prismMinecraft, "mods")) && fs.existsSync(path.join(sourceDir, "instance.cfg"))) {
+        const prism = parsePrismMetadata(sourceDir);
+        name = prism.name; mcVersion = prism.mcVersion; modLoader = prism.modLoader; modLoaderVersion = prism.modLoaderVersion; contentDir = prismMinecraft;
+      } else if (!fs.existsSync(path.join(sourceDir, "mods"))) {
+        const nested = findContentRoot(sourceDir);
+        if (nested) contentDir = nested;
+      }
+    }
+  }
+
+  if (!mcVersion) {
+    const versionFiles = path.join(contentDir, "versions");
+    if (fs.existsSync(versionFiles)) {
+      const versions = fs.readdirSync(versionFiles, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name);
+      const match = versions.map(value => value.match(/(\d+\.\d+(?:\.\d+)?)/)).find(Boolean);
+      if (match) mcVersion = match[1];
+      if (versions.some(value => /fabric/i.test(value))) modLoader = "Fabric";
+      else if (versions.some(value => /forge/i.test(value))) modLoader = "Forge";
+      else if (versions.some(value => /neoforge/i.test(value))) modLoader = "NeoForge";
+      else if (versions.some(value => /quilt/i.test(value))) modLoader = "Quilt";
+    }
+  }
+  if (!/^\d+\.\d+(?:\.\d+)?$/.test(mcVersion)) mcVersion = "1.20.1";
+  return { name: String(name).trim().slice(0, 40) || "Imported Build", mcVersion, modLoader, modLoaderVersion, contentDir };
+}
+
+function findContentRoot(rootDir, depth = 0) {
+  if (depth > 3) return null;
+  if (["mods", "config", "resourcepacks", "shaderpacks"].some(folder => fs.existsSync(path.join(rootDir, folder)))) return rootDir;
+  let entries = [];
+  try { entries = fs.readdirSync(rootDir, { withFileTypes: true }).filter(entry => entry.isDirectory()); } catch { return null; }
+  for (const entry of entries) {
+    const found = findContentRoot(path.join(rootDir, entry.name), depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function createImportedBuild(sourceDir, type) {
+  const metadata = detectBuildMetadata(sourceDir, type);
+  const build = {
+    id: crypto.randomUUID(),
+    name: metadata.name,
+    mcVersion: metadata.mcVersion,
+    modLoader: metadata.modLoader,
+    modLoaderVersion: metadata.modLoaderVersion,
+    importedFrom: type,
+    createdAt: new Date().toISOString()
+  };
+  const builds = readLocalBuilds();
+  builds.unshift(build);
+  saveJson(localBuildsPath(), builds);
+  const targetDir = path.join(instancesRoot(), build.id);
+  await fsp.mkdir(targetDir, { recursive: true });
+  const copied = await copyImportFolders(metadata.contentDir, targetDir);
+  if (!copied.length) {
+    const files = fs.readdirSync(metadata.contentDir);
+    if (!files.length) {
+      saveJson(localBuildsPath(), builds.filter(item => item.id !== build.id));
+      await fsp.rm(targetDir, { recursive: true, force: true });
+      throw new Error("В выбранной папке не найдены файлы сборки (mods, config, resourcepacks или shaderpacks).");
+    }
+  }
+  return { ...build, copied };
+}
+
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -209,6 +342,52 @@ ipcMain.handle("modrinth:install", async (event, input = {}) => {
     throw error;
   }
 });
+
+ipcMain.handle("import:auto-detect", async (_event, input = {}) => {
+  const type = String(input.type || "");
+  if (!["prism", "tlauncher", "zip"].includes(type)) throw new Error("Неизвестный тип импорта.");
+  const filters = type === "zip" ? [{ name: "ZIP-архивы сборок", extensions: ["zip"] }] : undefined;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: type === "prism" ? "Выберите папку сборки Prism Launcher" : type === "zip" ? "Выберите ZIP-архив сборки" : "Выберите папку TLauncher или .minecraft",
+    defaultPath: type === "prism" ? (findLauncherDirs().prismCandidates.find(dir => fs.existsSync(dir)) || os.homedir()) : type === "tlauncher" ? (fs.existsSync(findLauncherDirs().tlauncher) ? findLauncherDirs().tlauncher : os.homedir()) : os.homedir(),
+    properties: type === "zip" ? ["openFile"] : ["openDirectory"],
+    ...(filters ? { filters } : {})
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  let sourceDir = result.filePaths[0];
+  let tempDir = null;
+  try {
+    if (type === "zip") {
+      const stat = await fsp.stat(sourceDir);
+      if (stat.size > 1024 * 1024 * 1024) throw new Error("ZIP-архив слишком большой (лимит 1 ГБ).");
+      tempDir = path.join(instancesRoot(), ".import-" + crypto.randomUUID());
+      await extractZip(sourceDir, tempDir);
+      const manifestRoot = findManifestRoot(tempDir);
+      sourceDir = manifestRoot || tempDir;
+      const nested = findContentRoot(sourceDir);
+      if (!fs.existsSync(path.join(sourceDir, "manifest.json")) && !fs.existsSync(path.join(sourceDir, "modrinth.index.json")) && nested) sourceDir = nested;
+    }
+    if (type === "prism" && !fs.existsSync(path.join(sourceDir, "instance.cfg")) && !fs.existsSync(path.join(sourceDir, "mmc-pack.json"))) {
+      throw new Error("Не найден instance.cfg или mmc-pack.json. Выбери корневую папку экземпляра Prism.");
+    }
+    const imported = await createImportedBuild(sourceDir, type);
+    return { ...imported, source: result.filePaths[0] };
+  } finally {
+    if (tempDir) await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+function findManifestRoot(rootDir, depth = 0) {
+  if (depth > 3) return null;
+  if (fs.existsSync(path.join(rootDir, "manifest.json")) || fs.existsSync(path.join(rootDir, "modrinth.index.json"))) return rootDir;
+  let entries = [];
+  try { entries = fs.readdirSync(rootDir, { withFileTypes: true }).filter(entry => entry.isDirectory()); } catch { return null; }
+  for (const entry of entries) {
+    const found = findManifestRoot(path.join(rootDir, entry.name), depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
 
 ipcMain.handle("import:from-tlauncher", async (_event, input = {}) => {
   const build = validBuildId(String(input.buildId ?? ""));
