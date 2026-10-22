@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Play, Settings, Folder, Grid2X2, ChevronLeft, ChevronRight,
-  Volume2, Image as ImageIcon, Plus, Box, Download, Server,
+  Volume2, Image as ImageIcon, Plus, Box, Download, Flame, Server,
   CheckCircle, X, Minus, Maximize2, RefreshCw, Users, Shirt, Flag, Search, Upload
 } from "lucide-react";
 import { API_BASE } from "./config.js";
@@ -61,6 +61,7 @@ export default function App() {
   const [buildVersion, setBuildVersion] = useState("1.20.1");
   const [buildLoader, setBuildLoader] = useState("Vanilla");
   const [showModsModal, setShowModsModal] = useState(false);
+  const [modSource, setModSource] = useState("modrinth");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -79,7 +80,7 @@ export default function App() {
   useEffect(() => {
     if (!window.nexLauncher?.onModProgress) return;
     return window.nexLauncher.onModProgress(data => {
-      setModDownloads(prev => ({ ...prev, [data.id]: { progress: data.progress ?? 0, status: data.status, error: data.error } }));
+      setModDownloads(prev => ({ ...prev, [(data.source || "modrinth") + ":" + data.id]: { progress: data.progress ?? 0, status: data.status, error: data.error } }));
     });
   }, []);
 
@@ -413,19 +414,27 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => { setModSource("modrinth"); setSearchResults([]); }} className={"flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition " + (modSource === "modrinth" ? "bg-[#5DBB3A]/15 text-[#5DBB3A]" : "bg-[#1A1A1A] text-gray-400 hover:text-white")}>
+                  <Box size={16} /> Modrinth
+                </button>
+                <button type="button" onClick={() => { setModSource("curseforge"); setSearchResults([]); }} className={"flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition " + (modSource === "curseforge" ? "bg-[#F5A623]/15 text-[#F5A623]" : "bg-[#1A1A1A] text-gray-400 hover:text-white")}>
+                  <Flame size={16} /> CurseForge
+                </button>
+              </div>
               <form className="flex shrink-0 gap-2" onSubmit={async e => {
                 e.preventDefault();
                 if (!searchQuery.trim()) return;
                 setIsSearching(true);
                 try {
-                  const results = await window.nexLauncher.searchMods({
-                    query: searchQuery.trim(),
-                    mcVersion: selected?.isLocal ? selected.mcVersion : "",
-                    loader: selected?.isLocal ? selected.modLoader : ""
-                  });
+                  setSearchResults([]);
+                  const params = { query: searchQuery.trim(), mcVersion: selected?.isLocal ? selected.mcVersion : "", loader: selected?.isLocal ? selected.modLoader : "" };
+                  const results = modSource === "curseforge"
+                    ? await window.nexLauncher.searchModsCurseForge(params)
+                    : await window.nexLauncher.searchMods(params);
                   setSearchResults(results);
                 } catch (err) {
-                  alert("Ошибка поиска Modrinth: " + (err.message || "не удалось выполнить поиск"));
+                  alert("Ошибка поиска " + (modSource === "curseforge" ? "CurseForge" : "Modrinth") + ": " + (err.message || "не удалось выполнить поиск"));
                 } finally {
                   setIsSearching(false);
                 }
@@ -453,7 +462,8 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-[#2b2b2b]">
                     {searchResults.map(mod => {
-                      const downloadState = modDownloads[mod.id];
+                      const downloadKey = (modSource === "curseforge" ? "curseforge:" : "modrinth:") + mod.id;
+                      const downloadState = modDownloads[downloadKey];
                       const busy = ["starting", "downloading"].includes(downloadState?.status);
                       return (
                         <tr key={mod.id} className="transition hover:bg-[#222]">
@@ -484,10 +494,11 @@ export default function App() {
                                   }
                                   setModAction(mod.id);
                                   try {
-                                    await window.nexLauncher.installMod({ projectId: mod.id, buildId: selected.id });
-                                    setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 100, status: "done" } }));
+                                    if (modSource === "curseforge") await window.nexLauncher.installModCurseForge({ projectId: mod.id, buildId: selected.id });
+                                    else await window.nexLauncher.installMod({ projectId: mod.id, buildId: selected.id });
+                                    setModDownloads(prev => ({ ...prev, [downloadKey]: { progress: 100, status: "done" } }));
                                   } catch (err) {
-                                    setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 0, status: "error", error: err.message || "Ошибка установки" } }));
+                                    setModDownloads(prev => ({ ...prev, [downloadKey]: { progress: 0, status: "error", error: err.message || "Ошибка установки" } }));
                                   } finally {
                                     setModAction("");
                                   }
@@ -505,7 +516,7 @@ export default function App() {
                 {!searchResults.length && (
                   <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center">
                     <Search size={28} className="mb-3 text-gray-600" />
-                    <p className="text-sm text-gray-400">{isSearching ? "Ищем моды в Modrinth…" : "Введи название мода и нажми «Найти»."}</p>
+                    <p className="text-sm text-gray-400">{isSearching ? "Ищем моды…" : "Введи название мода и нажми «Найти»."}</p>
                   </div>
                 )}
               </div>
