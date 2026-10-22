@@ -353,9 +353,6 @@ export default function App() {
                   <div className="min-w-0 flex-1"><p className="truncate font-bold">{build.name}</p><p className="mt-1 text-xs text-gray-500">{build.modLoader} · Minecraft {build.mcVersion}</p></div>
                   <button onClick={() => { setSelected({ ...build, isLocal: true, server: null }); setPage("play"); }} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white hover:bg-[#6ed44a]">Выбрать</button>
                   <button onClick={() => { setSelected({ ...build, isLocal: true, server: null }); setShowModsModal(true); }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">Моды</button>
-                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromTL({ buildId: build.id }); if (!result.canceled) alert("Из TLauncher импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]"><Upload size={15} className="mr-1 inline" />TLauncher</button>
-                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromPrism({ buildId: build.id }); if (!result.canceled) alert("Из Prism импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">Prism</button>
-                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromZip({ buildId: build.id }); if (!result.canceled) alert("ZIP-сборка распакована в выбранный профиль."); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">ZIP</button>
                 </div>
               ))}
               {packs.map(pack => (
@@ -389,7 +386,7 @@ export default function App() {
               </p>
               <div className="flex flex-wrap gap-3 rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-5">
                 <button disabled={!selected?.isLocal} onClick={() => setShowModsModal(true)} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Search size={16} className="mr-2 inline" />Найти моды на Modrinth</button>
-                <button disabled={!selected?.isLocal} onClick={async () => { try { const result = await window.nexLauncher.importFromTL({ buildId: selected.id }); if (!result.canceled) alert("Импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-4 py-2 text-sm font-bold hover:bg-[#292929] disabled:opacity-40"><Upload size={16} className="mr-2 inline" />Импорт из TLauncher</button>
+                <button onClick={() => handleImport("tlauncher")} className="rounded-lg border border-[#393939] px-4 py-2 text-sm font-bold hover:bg-[#292929]"><Upload size={16} className="mr-2 inline" />Импорт сборки из TLauncher</button>
                 {!selected?.isLocal && <p className="w-full text-xs text-gray-500">Для управления модами выбери или создай локальную сборку.</p>}
                 {selected?.isLocal && <p className="w-full text-xs text-gray-500">Локальная папка сборки: instances/{selected.id}. Для запуска модов нужен соответствующий загрузчик.</p>}
               </div>
