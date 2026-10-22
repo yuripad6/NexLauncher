@@ -12,6 +12,13 @@ contextBridge.exposeInMainWorld("nexLauncher", {
   searchMods: (input) => ipcRenderer.invoke("modrinth:search", input),
   installMod: (input) => ipcRenderer.invoke("modrinth:install", input),
   importFromTL: (input) => ipcRenderer.invoke("import:from-tlauncher", input),
+  importFromPrism: (input) => ipcRenderer.invoke("import:from-prism", input),
+  importFromZip: (input) => ipcRenderer.invoke("import:from-zip", input),
+  onModProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("mod:progress", handler);
+    return () => ipcRenderer.removeListener("mod:progress", handler);
+  },
   onProgress: (cb) => {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("game:progress", handler);
