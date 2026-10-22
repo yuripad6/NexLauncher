@@ -64,6 +64,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [modAction, setModAction] = useState("");
+  const [modDownloads, setModDownloads] = useState({});
 
   useEffect(() => {
     if (!window.nexLauncher) return;
@@ -72,6 +73,13 @@ export default function App() {
       setTempName(settings.username || "Player");
     }).catch(() => {});
     window.nexLauncher.listLocalBuilds().then(setLocalBuilds).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!window.nexLauncher?.onModProgress) return;
+    return window.nexLauncher.onModProgress(data => {
+      setModDownloads(prev => ({ ...prev, [data.id]: { progress: data.progress ?? 0, status: data.status, error: data.error } }));
+    });
   }, []);
 
   // Загружаем список сборок с PHP API при старте.
@@ -331,7 +339,9 @@ export default function App() {
                   <div className="min-w-0 flex-1"><p className="truncate font-bold">{build.name}</p><p className="mt-1 text-xs text-gray-500">{build.modLoader} · Minecraft {build.mcVersion}</p></div>
                   <button onClick={() => { setSelected({ ...build, isLocal: true, server: null }); setPage("play"); }} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white hover:bg-[#6ed44a]">Выбрать</button>
                   <button onClick={() => { setSelected({ ...build, isLocal: true, server: null }); setShowModsModal(true); }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">Моды</button>
-                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromTL({ buildId: build.id }); if (!result.canceled) alert("Импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]"><Upload size={15} className="mr-1 inline" />Импорт</button>
+                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromTL({ buildId: build.id }); if (!result.canceled) alert("Из TLauncher импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]"><Upload size={15} className="mr-1 inline" />TLauncher</button>
+                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromPrism({ buildId: build.id }); if (!result.canceled) alert("Из Prism импортированы папки: " + result.copied.join(", ")); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">Prism</button>
+                  <button onClick={async () => { try { const result = await window.nexLauncher.importFromZip({ buildId: build.id }); if (!result.canceled) alert("ZIP-сборка распакована в выбранный профиль."); } catch (e) { alert(e.message); } }} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929]">ZIP</button>
                 </div>
               ))}
               {packs.map(pack => (
@@ -427,7 +437,10 @@ export default function App() {
             <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold text-white">Моды Modrinth</h2><button onClick={() => setShowModsModal(false)} className="rounded-lg p-2 text-gray-400 hover:bg-[#303030] hover:text-white"><X size={18} /></button></div>
             <p className="mb-3 text-xs text-gray-500">Сборка: {selected?.name} · Minecraft {selected?.mcVersion} · {selected?.modLoader}</p>
             <div className="flex gap-2"><input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Название мода..." className="min-w-0 flex-1 rounded-lg border border-[#333] bg-[#121212] px-3 py-2.5 text-white outline-none focus:border-[#5DBB3A]" /><button disabled={isSearching} onClick={async () => { setIsSearching(true); try { setSearchResults(await window.nexLauncher.searchMods({ query: searchQuery, mcVersion: selected?.mcVersion, loader: selected?.modLoader })); } catch (e) { alert(e.message); } finally { setIsSearching(false); } }} className="rounded-lg bg-[#5DBB3A] px-4 py-2 font-bold text-white disabled:opacity-50">{isSearching ? "Поиск…" : "Найти"}</button></div>
-            <div className="custom-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">{searchResults.map(mod => <div key={mod.id} className="flex items-center gap-3 rounded-xl border border-[#303030] bg-[#202020] p-3">{mod.icon ? <img src={mod.icon} alt="" className="h-10 w-10 rounded-lg object-cover" /> : <div className="grid h-10 w-10 place-items-center rounded-lg bg-[#303030]"><Box size={20} /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{mod.title}</p><p className="line-clamp-2 text-xs text-gray-500">{mod.description}</p><p className="mt-1 text-[11px] text-gray-600">{Number(mod.downloads || 0).toLocaleString()} загрузок</p></div><button disabled={modAction === mod.id} onClick={async () => { setModAction(mod.id); try { const result = await window.nexLauncher.installMod({ projectId: mod.id, buildId: selected.id }); alert("Установлен файл: " + result.filename); } catch (e) { alert(e.message); } finally { setModAction(""); } }} className="shrink-0 rounded-lg bg-[#303f2a] px-3 py-2 text-xs font-bold text-[#9be47d] hover:bg-[#3a5032] disabled:opacity-50">{modAction === mod.id ? "…" : "Установить"}</button></div>)}
+            <div className="custom-scrollbar mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">{searchResults.map(mod => {
+              const downloadState = modDownloads[mod.id];
+              return <div key={mod.id} className="flex items-center gap-3 rounded-xl border border-[#303030] bg-[#202020] p-3">{mod.icon ? <img src={mod.icon} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" /> : <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#303030]"><Box size={20} /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{mod.title}</p><p className="line-clamp-2 text-xs text-gray-500">{mod.description}</p><p className="mt-1 text-[11px] text-gray-600">{Number(mod.downloads || 0).toLocaleString()} загрузок</p>{downloadState && ["starting", "downloading"].includes(downloadState.status) && <div className="mt-2"><div className="mb-1 flex justify-between text-[11px] text-[#9be47d]"><span>{downloadState.status === "starting" ? "Подготовка скачивания…" : "Скачивание…"}</span><span>{downloadState.progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#303030]"><div className="h-full rounded-full bg-[#5dbb3a] transition-all duration-200" style={{ width: downloadState.progress + "%" }} /></div></div>}{downloadState?.status === "error" && <p className="mt-1 text-[11px] text-red-400">{downloadState.error || "Ошибка скачивания"}</p>}</div><div className="w-28 shrink-0">{downloadState?.status === "done" ? <button disabled className="flex w-full items-center justify-center gap-1 rounded-lg bg-[#2b2b2b] px-2 py-2 text-xs text-gray-400"><CheckCircle size={14} />Установлен</button> : <button disabled={modAction === mod.id || ["starting", "downloading"].includes(downloadState?.status)} onClick={async () => { setModAction(mod.id); try { await window.nexLauncher.installMod({ projectId: mod.id, buildId: selected.id }); setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 100, status: "done" } })); } catch (e) { setModDownloads(prev => ({ ...prev, [mod.id]: { progress: 0, status: "error", error: e.message } })); } finally { setModAction(""); } }} className="w-full rounded-lg bg-[#303f2a] px-2 py-2 text-xs font-bold text-[#9be47d] hover:bg-[#3a5032] disabled:opacity-50">{modAction === mod.id ? "…" : downloadState?.status === "error" ? "Повторить" : "Установить"}</button>}</div></div>;
+            })}
               {!searchResults.length && <p className="py-8 text-center text-sm text-gray-500">Введи название и нажми «Найти».</p>}
             </div><p className="mt-3 text-xs text-gray-600">Для запуска модов необходим установленный совместимый загрузчик.</p>
           </div>
