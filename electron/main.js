@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Transform, Readable } from "node:stream";
 import unzipper from "unzipper";
+import { autoUpdater } from "electron-updater";
 import minecraftLauncherCore from "minecraft-launcher-core";
 const { Client, Authenticator } = minecraftLauncherCore;
 
@@ -205,8 +206,18 @@ function createWindow() {
 
 ipcMain.handle("app:get-info", () => ({ name: "NexLauncher", version: app.getVersion(), author: "NexLab" }));
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify().catch(error => console.warn("[Updater] Check failed:", error.message));
+  }
+});
 app.on("window-all-closed", () => app.quit());
+
+autoUpdater.on("update-available", info => mainWindow?.webContents.send("update:available", { version: info.version }));
+autoUpdater.on("update-downloaded", info => mainWindow?.webContents.send("update:downloaded", { version: info.version }));
+autoUpdater.on("error", error => console.warn("[Updater]", error.message));
+ipcMain.on("update:install", () => autoUpdater.quitAndInstall());
 
 ipcMain.on("window:minimize", () => mainWindow?.minimize());
 ipcMain.on("window:maximize", () => {
@@ -273,6 +284,57 @@ function loadSettings() { return { username: "Player", ram: 2048, ...readJson(se
 function saveJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8"); }
 function readLocalBuilds() { const builds = readJson(localBuildsPath(), []); return Array.isArray(builds) ? builds : []; }
 function validBuildId(id) { if (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) throw new Error("Некорректный идентификатор сборки"); const build = readLocalBuilds().find(item => item.id === id); if (!build) throw new Error("Сборка не найдена"); return build; }
+
+
+const CONTENT_DIRS = { mods: "mods", shaders: "shaderpacks", worlds: "saves" };
+ipcMain.handle("content:list", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const kind = String(input.kind ?? "mods");
+  const folderName = CONTENT_DIRS[kind];
+  if (!folderName) throw new Error("Неизвестный тип контента");
+  const folder = path.join(instancesRoot(), build.id, folderName);
+  await fsp.mkdir(folder, { recursive: true });
+  const entries = await fsp.readdir(folder, { withFileTypes: true });
+  const items = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const fullPath = path.join(folder, entry.name);
+    const stat = await fsp.stat(fullPath);
+    if (kind === "mods" && (!entry.isFile() || !/\.jar$/i.test(entry.name))) continue;
+    if (kind === "shaders" && (!entry.isFile() || !/\.(zip|jar)$/i.test(entry.name))) continue;
+    if (kind === "worlds" && !entry.isDirectory()) continue;
+    items.push({ name: entry.name, size: stat.size, isDirectory: entry.isDirectory() });
+  }
+  return items.sort((a, b) => a.name.localeCompare(b.name));
+});
+ipcMain.handle("content:delete", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const kind = String(input.kind ?? "mods");
+  const folderName = CONTENT_DIRS[kind];
+  const name = String(input.name ?? "");
+  if (!folderName || !name || name !== path.basename(name) || name.includes("..")) throw new Error("Некорректный элемент контента");
+  const target = path.join(instancesRoot(), build.id, folderName, name);
+  const resolvedFolder = path.resolve(instancesRoot(), build.id, folderName);
+  if (!path.resolve(target).startsWith(resolvedFolder + path.sep)) throw new Error("Недопустимый путь");
+  const stat = await fsp.stat(target).catch(() => null);
+  if (!stat) throw new Error("Элемент не найден");
+  if (kind === "mods" && (!stat.isFile() || !/\.jar$/i.test(name))) throw new Error("Можно удалять только JAR-моды");
+  if (kind === "shaders" && (!stat.isFile() || !/\.(zip|jar)$/i.test(name))) throw new Error("Можно удалять только файлы шейдеров");
+  if (kind === "worlds" && !stat.isDirectory()) throw new Error("Можно удалять только папки миров");
+  await fsp.rm(target, { recursive: kind === "worlds", force: false });
+  return { ok: true };
+});
+ipcMain.handle("content:open-folder", async (_event, input = {}) => {
+  const build = validBuildId(String(input.buildId ?? ""));
+  const kind = String(input.kind ?? "mods");
+  const folderName = CONTENT_DIRS[kind];
+  if (!folderName) throw new Error("Неизвестный тип контента");
+  const folder = path.join(instancesRoot(), build.id, folderName);
+  await fsp.mkdir(folder, { recursive: true });
+  const result = await shell.openPath(folder);
+  if (result) throw new Error(result);
+  return true;
+});
 
 ipcMain.handle("settings:get", () => loadSettings());
 ipcMain.handle("settings:set-username", (_event, rawName) => {
