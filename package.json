@@ -1,6 +1,6 @@
 {
   "name": "nexlauncher",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -29,7 +29,13 @@
   "build": {
     "appId": "com.nexlauncher.app",
     "productName": "NexLauncher",
-    "directories": { "output": "dist" },
-    "win": { "target": "nsis" }
-  }
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "author": "NexLab",
+  "description": "NexLauncher — Minecraft launcher by NexLab"
 }
