@@ -5,6 +5,20 @@ contextBridge.exposeInMainWorld("nexLauncher", {
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  listContent: (input) => ipcRenderer.invoke("content:list", input),
+  deleteContent: (input) => ipcRenderer.invoke("content:delete", input),
+  openContentFolder: (input) => ipcRenderer.invoke("content:open-folder", input),
+  installUpdate: () => ipcRenderer.send("update:install"),
+  onUpdateAvailable: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on("update:available", handler);
+    return () => ipcRenderer.removeListener("update:available", handler);
+  },
+  onUpdateDownloaded: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on("update:downloaded", handler);
+    return () => ipcRenderer.removeListener("update:downloaded", handler);
+  },
   launch: (opts) => ipcRenderer.invoke("game:launch", opts),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setUsername: (name) => ipcRenderer.invoke("settings:set-username", name),
