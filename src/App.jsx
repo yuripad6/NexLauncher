@@ -68,6 +68,12 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [modAction, setModAction] = useState("");
   const [modDownloads, setModDownloads] = useState({});
+  const [autoConnect, setAutoConnect] = useState(true);
+  const [contentTab, setContentTab] = useState("mods");
+  const [installedContent, setInstalledContent] = useState([]);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState("");
 
   useEffect(() => {
     window.nexLauncher?.getAppInfo?.().then(setAppInfo).catch(() => {});
@@ -81,6 +87,34 @@ export default function App() {
     }).catch(() => {});
     window.nexLauncher.listLocalBuilds().then(setLocalBuilds).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const offAvailable = window.nexLauncher?.onUpdateAvailable?.(data => {
+      setUpdateAvailable(true);
+      setUpdateVersion(data?.version || "");
+    });
+    const offDownloaded = window.nexLauncher?.onUpdateDownloaded?.(data => {
+      setUpdateReady(true);
+      setUpdateVersion(data?.version || "");
+    });
+    return () => { offAvailable?.(); offDownloaded?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!selected?.isLocal || page !== "content" || !window.nexLauncher?.listContent) {
+      setInstalledContent([]);
+      return;
+    }
+    window.nexLauncher.listContent({ buildId: selected.id, kind: contentTab })
+      .then(setInstalledContent)
+      .catch(err => { setInstalledContent([]); setError(err.message || "Не удалось загрузить контент"); });
+  }, [selected?.id, selected?.isLocal, page, contentTab, modDownloads]);
+
+  async function refreshContent() {
+    if (!selected?.isLocal) return;
+    const items = await window.nexLauncher.listContent({ buildId: selected.id, kind: contentTab });
+    setInstalledContent(items);
+  }
 
   useEffect(() => {
     if (!window.nexLauncher?.onModProgress) return;
@@ -143,6 +177,7 @@ export default function App() {
         packId: selected.id,
         username,
         ram: 2048,
+        autoConnect,
         ...(selected.isLocal ? { localBuildId: selected.id } : {})
       });
     } catch (err) {
@@ -153,6 +188,10 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#121212] font-sans text-gray-200">
+      {(updateAvailable || updateReady) && <div className="flex shrink-0 items-center justify-center gap-3 bg-[#5DBB3A] px-4 py-2 text-sm font-bold text-white">
+        <span>{updateReady ? `Обновление ${updateVersion ? "v" + updateVersion : ""} готово к установке` : `Доступно обновление ${updateVersion ? "v" + updateVersion : ""}`}</span>
+        {updateReady ? <button onClick={() => window.nexLauncher?.installUpdate()} className="underline">Перезапустить и обновить</button> : <span className="font-normal">Скачиваем в фоне…</span>}
+      </div>}
       {/* Хедер */}
       <header className="relative flex h-14 shrink-0 items-center justify-between
         border-b border-[#292929] bg-[#171717] px-5">
@@ -531,17 +570,27 @@ export default function App() {
           )}
 
           {page === "content" && (
-            <section className="space-y-5 py-3">
-              <h1 className="text-2xl font-extrabold text-white">Контент</h1>
-              <p className="text-sm text-gray-500">
-                Содержимое сборки: {selected?.name || "не выбрана"}.
-              </p>
-              <div className="flex flex-wrap gap-3 rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-5">
-                <button disabled={!selected?.isLocal} onClick={() => setShowModsModal(true)} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Search size={16} className="mr-2 inline" />Найти моды на Modrinth</button>
-                <button onClick={() => handleImport("tlauncher")} className="rounded-lg border border-[#393939] px-4 py-2 text-sm font-bold hover:bg-[#292929]"><Upload size={16} className="mr-2 inline" />Импорт сборки из TLauncher</button>
-                {!selected?.isLocal && <p className="w-full text-xs text-gray-500">Для управления модами выбери или создай локальную сборку.</p>}
-                {selected?.isLocal && <p className="w-full text-xs text-gray-500">Локальная папка сборки: instances/{selected.id}. Для запуска модов нужен соответствующий загрузчик.</p>}
+            <section className="space-y-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h1 className="text-2xl font-extrabold text-white">Контент</h1><p className="mt-1 text-sm text-gray-500">Моды, шейдеры и миры выбранной локальной сборки.</p></div>
+                <button disabled={!selected?.isLocal} onClick={() => window.nexLauncher.openContentFolder({ buildId: selected.id, kind: contentTab }).catch(e => alert(e.message))} className="rounded-lg border border-[#393939] px-3 py-2 text-sm hover:bg-[#292929] disabled:opacity-40">Открыть папку</button>
               </div>
+              <div className="flex flex-wrap gap-2">
+                {[["mods","Моды"],["shaders","Шейдеры"],["worlds","Миры"]].map(([kind,label]) => <button key={kind} onClick={() => setContentTab(kind)} className={"rounded-lg px-4 py-2 text-sm font-bold " + (contentTab === kind ? "bg-[#5DBB3A]/15 text-[#5DBB3A]" : "bg-[#1A1A1A] text-gray-400 hover:text-white")}>{label}</button>)}
+                <button disabled={!selected?.isLocal} onClick={() => setShowModsModal(true)} className="rounded-lg bg-[#5dbb3a] px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><Search size={16} className="mr-1 inline" />Найти моды</button>
+                <button onClick={() => handleImport("tlauncher")} className="rounded-lg border border-[#393939] px-4 py-2 text-sm font-bold hover:bg-[#292929]"><Upload size={16} className="mr-1 inline" />Импорт TLauncher</button>
+              </div>
+              {!selected?.isLocal ? <p className="rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-5 text-sm text-gray-400">Выбери локальную сборку в разделе «Мои сборки».</p> : (
+                <div className="overflow-hidden rounded-xl border border-[#2b2b2b] bg-[#1b1b1b]">
+                  {installedContent.length === 0 ? <p className="p-5 text-sm text-gray-500">{contentTab === "mods" ? "Моды пока не установлены." : contentTab === "shaders" ? "Шейдеры пока не установлены." : "Миров пока нет."}</p> : installedContent.map(item => (
+                    <div key={item.name} className="flex items-center gap-3 border-b border-[#2b2b2b] p-3 last:border-0">
+                      <Box size={18} className="shrink-0 text-[#5DBB3A]" />
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{item.name}</p><p className="text-xs text-gray-500">{item.isDirectory ? "Папка мира" : (item.size / 1024 / 1024).toFixed(1) + " МБ"}</p></div>
+                      <button onClick={async () => { if (!confirm("Удалить «" + item.name + "»?")) return; try { await window.nexLauncher.deleteContent({ buildId: selected.id, kind: contentTab, name: item.name }); await refreshContent(); } catch (e) { alert(e.message || "Не удалось удалить"); } }} className="rounded-lg p-2 text-red-400 hover:bg-red-500/10" title="Удалить"><X size={16} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
@@ -574,6 +623,7 @@ export default function App() {
                     <option value="8192">8 ГБ</option>
                   </select>
                 </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={autoConnect} onChange={e => setAutoConnect(e.target.checked)} className="accent-[#5DBB3A]" />Автоматически подключаться к серверу сборки</label>
                 <p className="text-xs text-gray-500">
                   Настройки сохраняются автоматически. Для публичного сервера
                   используйте лицензионную авторизацию Microsoft (Guest Mode небезопасен).
