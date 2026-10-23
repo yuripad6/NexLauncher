@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Transform, Readable } from "node:stream";
 import unzipper from "unzipper";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
+const { autoUpdater } = electronUpdater;
 import minecraftLauncherCore from "minecraft-launcher-core";
 const { Client, Authenticator } = minecraftLauncherCore;
 
