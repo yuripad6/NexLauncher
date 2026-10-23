@@ -552,7 +552,7 @@ ipcMain.handle("import:from-zip", async (_event, input = {}) => {
 
 ipcMain.handle("game:launch", async (_e, opts) => {
   try {
-    const { packId, localBuildId, username = loadSettings().username, ram = loadSettings().ram } = opts;
+    const { packId, localBuildId, username = loadSettings().username, ram = loadSettings().ram, autoConnect = true } = opts;
     if (localBuildId) {
       const build = validBuildId(String(localBuildId));
       if (build.modLoader !== "Vanilla") {
@@ -612,7 +612,7 @@ ipcMain.handle("game:launch", async (_e, opts) => {
         custom
       },
       memory: { max: `${ram}M`, min: "512M" },
-      customArgs: ["--server", pack.server.ip, "--port", String(pack.server.port)]
+      customArgs: autoConnect && pack.server?.ip ? ["--server", pack.server.ip, "--port", String(pack.server.port || 25565)] : []
     };
 
     launcher = new Client();
