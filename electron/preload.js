@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("nexLauncher", {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
   close: () => ipcRenderer.send("window:close"),
+  getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   launch: (opts) => ipcRenderer.invoke("game:launch", opts),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setUsername: (name) => ipcRenderer.invoke("settings:set-username", name),
