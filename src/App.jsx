@@ -52,6 +52,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
+  const [appInfo, setAppInfo] = useState({ name: "NexLauncher", version: "1.5.0", author: "NexLab" });
   const [username, setUsername] = useState("Player");
   const [showNameModal, setShowNameModal] = useState(false);
   const [tempName, setTempName] = useState("Player");
@@ -67,6 +68,10 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [modAction, setModAction] = useState("");
   const [modDownloads, setModDownloads] = useState({});
+
+  useEffect(() => {
+    window.nexLauncher?.getAppInfo?.().then(setAppInfo).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!window.nexLauncher) return;
@@ -551,6 +556,7 @@ export default function App() {
             <section className="max-w-2xl space-y-5 py-3">
               <h1 className="text-2xl font-extrabold text-white">Настройки</h1>
               <div className="space-y-5 rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-5">
+                <div className="flex items-center justify-between border-b border-[#303030] pb-4"><div><p className="font-bold text-white">{appInfo.name}</p><p className="mt-1 text-xs text-gray-500">Автор: {appInfo.author}</p></div><span className="rounded-full bg-[#5DBB3A]/15 px-3 py-1 text-xs font-bold text-[#8ddd6d]">v{appInfo.version}</span></div>
                 <label className="block text-sm font-semibold">
                   API-адрес (InfinityFree)
                   <input value={API_BASE} readOnly
