@@ -15,7 +15,8 @@
     "minecraft-launcher-core": "^3.18.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "unzipper": "^0.12.3"
+    "unzipper": "^0.12.3",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -34,7 +35,14 @@
     },
     "win": {
       "target": "nsis"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yuripad6",
+        "repo": "NexLauncher"
+      }
+    ]
   },
   "author": "NexLab",
   "description": "NexLauncher — Minecraft launcher by NexLab"
