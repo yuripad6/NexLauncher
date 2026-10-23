@@ -203,6 +203,8 @@ function createWindow() {
   }
 }
 
+ipcMain.handle("app:get-info", () => ({ name: "NexLauncher", version: app.getVersion(), author: "NexLab" }));
+
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => app.quit());
 
